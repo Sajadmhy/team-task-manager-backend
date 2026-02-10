@@ -1,0 +1,30 @@
+export const resolvers = {
+  Query: {
+    users: () => "OK",
+    user: () => "OK",
+    teams: () => "OK",
+    team: () => "OK",
+    teamMembers: () => "OK",
+    tasks: () => "OK",
+    task: () => "OK",
+    taskAssignmentHistory: () => "OK",
+  },
+
+  Mutation: {
+    createUser: () => "OK",
+    updateUser: () => "OK",
+    deleteUser: () => "OK",
+    createTeam: () => "OK",
+    updateTeam: () => "OK",
+    deleteTeam: () => "OK",
+    addTeamMember: () => "OK",
+    updateTeamMemberRole: () => "OK",
+    removeTeamMember: () => "OK",
+    createTask: () => "OK",
+    updateTask: () => "OK",
+    deleteTask: () => "OK",
+    assignTask: () => "OK",
+    unassignTask: () => "OK",
+    updateTaskStatus: () => "OK",
+  },
+};
