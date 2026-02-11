@@ -1,10 +1,15 @@
 import bcrypt from "bcryptjs";
-import { signAccessToken } from "../utils/jwt";
+import {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+} from "../utils/jwt";
 import { registerSchema, loginSchema } from "../validation/auth";
 import {
   validationError,
   emailAlreadyExists,
   invalidCredentials,
+  refreshTokenExpired,
 } from "../errors";
 import type { Context } from "../context";
 
@@ -21,7 +26,19 @@ interface StoredUser {
 const users: Map<string, StoredUser> = new Map();
 let nextId = 1;
 
-// Helper to strip sensitive fields before returning to client
+// ── Cookie config ─────────────────────────────────────
+
+const REFRESH_COOKIE = "refresh_token";
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+};
+
+// ── Helpers ───────────────────────────────────────────
+
 function toPublicUser(u: StoredUser) {
   return {
     id: u.id,
@@ -32,14 +49,22 @@ function toPublicUser(u: StoredUser) {
   };
 }
 
+function setRefreshCookie(ctx: Context, token: string) {
+  ctx.res.cookie(REFRESH_COOKIE, token, COOKIE_OPTIONS);
+}
+
+function clearRefreshCookie(ctx: Context) {
+  ctx.res.clearCookie(REFRESH_COOKIE, { path: "/" });
+}
+
 // ── Resolvers ─────────────────────────────────────────
 
 export const authResolvers = {
   Query: {
-    me: (_: unknown, __: unknown, context: Context) => {
-      if (!context.user) return null;
+    me: (_: unknown, __: unknown, ctx: Context) => {
+      if (!ctx.user) return null;
 
-      const stored = users.get(context.user.userId);
+      const stored = users.get(ctx.user.userId);
       if (!stored) return null;
 
       return toPublicUser(stored);
@@ -49,7 +74,8 @@ export const authResolvers = {
   Mutation: {
     register: async (
       _: unknown,
-      { input }: { input: { email: string; password: string; name?: string } }
+      { input }: { input: { email: string; password: string; name?: string } },
+      ctx: Context
     ) => {
       const parsed = registerSchema.safeParse(input);
       if (!parsed.success) {
@@ -79,10 +105,11 @@ export const authResolvers = {
 
       users.set(id, newUser);
 
-      const accessToken = signAccessToken({
-        userId: id,
-        email,
-      });
+      const tokenPayload = { userId: id, email };
+      const accessToken = signAccessToken(tokenPayload);
+      const refreshToken = signRefreshToken(tokenPayload);
+
+      setRefreshCookie(ctx, refreshToken);
 
       return {
         accessToken,
@@ -92,7 +119,8 @@ export const authResolvers = {
 
     login: async (
       _: unknown,
-      { input }: { input: { email: string; password: string } }
+      { input }: { input: { email: string; password: string } },
+      ctx: Context
     ) => {
       const parsed = loginSchema.safeParse(input);
       if (!parsed.success) {
@@ -119,15 +147,52 @@ export const authResolvers = {
         throw invalidCredentials();
       }
 
-      const accessToken = signAccessToken({
-        userId: found.id,
-        email: found.email,
-      });
+      const tokenPayload = { userId: found.id, email: found.email };
+      const accessToken = signAccessToken(tokenPayload);
+      const refreshToken = signRefreshToken(tokenPayload);
+
+      setRefreshCookie(ctx, refreshToken);
 
       return {
         accessToken,
         user: toPublicUser(found),
       };
+    },
+
+    refresh: (_: unknown, __: unknown, ctx: Context) => {
+      const token = ctx.req.cookies?.[REFRESH_COOKIE];
+      if (!token) {
+        throw refreshTokenExpired();
+      }
+
+      const payload = verifyRefreshToken(token);
+      if (!payload) {
+        clearRefreshCookie(ctx);
+        throw refreshTokenExpired();
+      }
+
+      const stored = users.get(payload.userId);
+      if (!stored) {
+        clearRefreshCookie(ctx);
+        throw refreshTokenExpired();
+      }
+
+      // Rotate: issue new pair
+      const tokenPayload = { userId: stored.id, email: stored.email };
+      const accessToken = signAccessToken(tokenPayload);
+      const newRefreshToken = signRefreshToken(tokenPayload);
+
+      setRefreshCookie(ctx, newRefreshToken);
+
+      return {
+        accessToken,
+        user: toPublicUser(stored),
+      };
+    },
+
+    logout: (_: unknown, __: unknown, ctx: Context) => {
+      clearRefreshCookie(ctx);
+      return { success: true, message: "Logged out successfully." };
     },
   },
 };

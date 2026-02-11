@@ -1,20 +1,28 @@
-import type { Request } from "express";
-import { verifyAccessToken, type AccessTokenPayload } from "./utils/jwt";
+import type { Request, Response } from "express";
+import { verifyAccessToken, type TokenPayload } from "./utils/jwt";
 
 export interface Context {
   /** The authenticated user, or null if unauthenticated */
-  user: AccessTokenPayload | null;
+  user: TokenPayload | null;
+  /** Express request (needed to read cookies) */
+  req: Request;
+  /** Express response (needed to set/clear cookies) */
+  res: Response;
 }
 
-export function buildContext(req: Request): Context {
+/**
+ * Build a GraphQL context from the incoming Express request.
+ * Extracts the Bearer token from the Authorization header
+ * and verifies it. If valid, `context.user` is populated.
+ */
+export function buildContext(req: Request, res: Response): Context {
   const header = req.headers.authorization; // "Bearer <token>"
 
-  if (!header || !header.startsWith("Bearer ")) {
-    return { user: null };
+  let user: TokenPayload | null = null;
+  if (header && header.startsWith("Bearer ")) {
+    const token = header.slice(7);
+    user = verifyAccessToken(token);
   }
 
-  const token = header.slice(7); // strip "Bearer "
-  const payload = verifyAccessToken(token);
-
-  return { user: payload };
+  return { user, req, res };
 }

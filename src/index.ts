@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import { graphql, GraphQLError } from "graphql";
 import { makeExecutableSchema } from "@graphql-tools/schema";
 import expressPlayground from "graphql-playground-middleware-express";
@@ -13,8 +14,9 @@ import { AppError } from "./errors";
 const app = express();
 const PORT = process.env.PORT || 4000;
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
+app.use(cookieParser());
 
 // Build executable schema from typeDefs + resolvers
 const schema = makeExecutableSchema({ typeDefs, resolvers });
@@ -22,7 +24,7 @@ const schema = makeExecutableSchema({ typeDefs, resolvers });
 // GraphQL endpoint
 app.post("/graphql", async (req, res) => {
   const { query, variables, operationName } = req.body;
-  const context = buildContext(req);
+  const context = buildContext(req, res);
 
   const result = await graphql({
     schema,

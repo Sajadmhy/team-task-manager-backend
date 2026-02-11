@@ -165,6 +165,8 @@ export const typeDefs = gql`
     # Auth
     register(input: RegisterInput!): AuthPayload!
     login(input: LoginInput!): AuthPayload!
+    refresh: AuthPayload!
+    logout: MutationResponse!
 
     # Users
     createUser(input: CreateUserInput!): User!

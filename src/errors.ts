@@ -7,6 +7,7 @@ export enum ErrorCode {
   EMAIL_ALREADY_EXISTS = "EMAIL_ALREADY_EXISTS",
   UNAUTHENTICATED = "UNAUTHENTICATED",
   UNAUTHORIZED = "UNAUTHORIZED",
+  REFRESH_TOKEN_EXPIRED = "REFRESH_TOKEN_EXPIRED",
 
   // Resource
   NOT_FOUND = "NOT_FOUND",
@@ -23,6 +24,7 @@ const STATUS_MAP: Record<ErrorCode, number> = {
   [ErrorCode.EMAIL_ALREADY_EXISTS]: 409,
   [ErrorCode.UNAUTHENTICATED]: 401,
   [ErrorCode.UNAUTHORIZED]: 403,
+  [ErrorCode.REFRESH_TOKEN_EXPIRED]: 401,
   [ErrorCode.NOT_FOUND]: 404,
   [ErrorCode.INTERNAL_ERROR]: 500,
 };
@@ -69,6 +71,12 @@ export function unauthorized(
   message = "You do not have permission to perform this action."
 ) {
   return new AppError(ErrorCode.UNAUTHORIZED, message);
+}
+
+export function refreshTokenExpired(
+  message = "Refresh token is invalid or expired. Please log in again."
+) {
+  return new AppError(ErrorCode.REFRESH_TOKEN_EXPIRED, message);
 }
 
 export function notFound(resource: string) {
