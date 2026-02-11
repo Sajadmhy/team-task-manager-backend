@@ -62,7 +62,25 @@ export const typeDefs = gql`
     changedAt: String!
   }
 
+  # ── Auth Types ────────────────────────────────────────
+
+  type AuthPayload {
+    accessToken: String!
+    user: User!
+  }
+
   # ── Inputs ─────────────────────────────────────────────
+
+  input RegisterInput {
+    email: String!
+    password: String!
+    name: String
+  }
+
+  input LoginInput {
+    email: String!
+    password: String!
+  }
 
   input CreateUserInput {
     email: String!
@@ -119,6 +137,9 @@ export const typeDefs = gql`
   # ── Queries ────────────────────────────────────────────
 
   type Query {
+    # Auth
+    me: User
+
     # Users
     users: [User!]!
     user(id: ID!): User
@@ -141,6 +162,10 @@ export const typeDefs = gql`
   # ── Mutations ──────────────────────────────────────────
 
   type Mutation {
+    # Auth
+    register(input: RegisterInput!): AuthPayload!
+    login(input: LoginInput!): AuthPayload!
+
     # Users
     createUser(input: CreateUserInput!): User!
     updateUser(id: ID!, input: UpdateUserInput!): User!
