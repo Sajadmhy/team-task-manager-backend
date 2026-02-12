@@ -12,19 +12,7 @@ import {
   refreshTokenExpired,
 } from "../errors";
 import type { Context } from "../context";
-
-// ── In-memory user store (replace with DB later) ──────
-
-interface StoredUser {
-  id: string;
-  email: string;
-  passwordHash: string;
-  name: string | null;
-  createdAt: string;
-}
-
-const users: Map<string, StoredUser> = new Map();
-let nextId = 1;
+import { users, nextId, type StoredUser } from "../store";
 
 // ── Cookie config ─────────────────────────────────────
 
@@ -45,7 +33,7 @@ function toPublicUser(u: StoredUser) {
     email: u.email,
     name: u.name,
     createdAt: u.createdAt,
-    teams: [], // placeholder until team resolvers are wired
+    // teams resolved by User type resolver
   };
 }
 
@@ -92,7 +80,7 @@ export const authResolvers = {
       }
 
       const passwordHash = await bcrypt.hash(password, 10);
-      const id = String(nextId++);
+      const id = nextId();
       const now = new Date().toISOString();
 
       const newUser: StoredUser = {

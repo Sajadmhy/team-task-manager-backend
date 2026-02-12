@@ -1,4 +1,6 @@
 import { authResolvers } from "./auth";
+import { teamResolvers } from "./team";
+import { getTeamsForUser } from "../store";
 
 export const resolvers = {
   Query: {
@@ -10,11 +12,7 @@ export const resolvers = {
     user: () => "OK",
 
     // Teams
-    teams: () => "OK",
-    team: () => "OK",
-
-    // Team Members
-    teamMembers: () => "OK",
+    ...teamResolvers.Query,
 
     // Tasks
     tasks: () => "OK",
@@ -34,14 +32,7 @@ export const resolvers = {
     deleteUser: () => "OK",
 
     // Teams
-    createTeam: () => "OK",
-    updateTeam: () => "OK",
-    deleteTeam: () => "OK",
-
-    // Team Members
-    addTeamMember: () => "OK",
-    updateTeamMemberRole: () => "OK",
-    removeTeamMember: () => "OK",
+    ...teamResolvers.Mutation,
 
     // Tasks
     createTask: () => "OK",
@@ -50,5 +41,28 @@ export const resolvers = {
     assignTask: () => "OK",
     unassignTask: () => "OK",
     updateTaskStatus: () => "OK",
+  },
+
+  // ── Type resolvers ──────────────────────────────────────
+
+  Team: {
+    ...teamResolvers.Team,
+  },
+
+  TeamMember: {
+    ...teamResolvers.TeamMember,
+  },
+
+  User: {
+    teams: (user: { id: string }) => {
+      const memberships = getTeamsForUser(user.id);
+      return memberships.map((m) => ({
+        id: m.id,
+        role: m.role,
+        joinedAt: m.joinedAt,
+        _userId: m.userId,
+        _teamId: m.teamId,
+      }));
+    },
   },
 };
