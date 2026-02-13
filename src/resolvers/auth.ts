@@ -1,20 +1,7 @@
-import bcrypt from "bcryptjs";
-import {
-  signAccessToken,
-  signRefreshToken,
-  verifyRefreshToken,
-} from "../utils/jwt";
-import { registerSchema, loginSchema } from "../validation/auth";
-import {
-  validationError,
-  emailAlreadyExists,
-  invalidCredentials,
-  refreshTokenExpired,
-} from "../errors";
 import type { Context } from "../context";
-import { users, nextId, type StoredUser } from "../store";
+import * as authService from "../services/auth.service";
 
-// ── Cookie config ─────────────────────────────────────
+// ── Cookie config (transport concern — stays in the resolver) ──
 
 const REFRESH_COOKIE = "refresh_token";
 const COOKIE_OPTIONS = {
@@ -22,20 +9,8 @@ const COOKIE_OPTIONS = {
   secure: process.env.NODE_ENV === "production",
   sameSite: "lax" as const,
   path: "/",
-  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
-
-// ── Helpers ───────────────────────────────────────────
-
-function toPublicUser(u: StoredUser) {
-  return {
-    id: u.id,
-    email: u.email,
-    name: u.name,
-    createdAt: u.createdAt,
-    // teams resolved by User type resolver
-  };
-}
 
 function setRefreshCookie(ctx: Context, token: string) {
   ctx.res.cookie(REFRESH_COOKIE, token, COOKIE_OPTIONS);
@@ -45,137 +20,39 @@ function clearRefreshCookie(ctx: Context) {
   ctx.res.clearCookie(REFRESH_COOKIE, { path: "/" });
 }
 
-// ── Resolvers ─────────────────────────────────────────
+// ── Resolvers (thin — delegate to service) ────────────────
 
 export const authResolvers = {
   Query: {
     me: (_: unknown, __: unknown, ctx: Context) => {
       if (!ctx.user) return null;
-
-      const stored = users.get(ctx.user.userId);
-      if (!stored) return null;
-
-      return toPublicUser(stored);
+      return authService.getMe(ctx.user.userId);
     },
   },
 
   Mutation: {
-    register: async (
-      _: unknown,
-      { input }: { input: { email: string; password: string; name?: string } },
-      ctx: Context
-    ) => {
-      const parsed = registerSchema.safeParse(input);
-      if (!parsed.success) {
-        throw validationError(
-          parsed.error.issues.map((i) => i.message).join(" ")
-        );
-      }
-      const { email, password, name } = parsed.data;
-
-      for (const u of users.values()) {
-        if (u.email === email) {
-          throw emailAlreadyExists();
-        }
-      }
-
-      const passwordHash = await bcrypt.hash(password, 10);
-      const id = nextId();
-      const now = new Date().toISOString();
-
-      const newUser: StoredUser = {
-        id,
-        email,
-        passwordHash,
-        name: name ?? null,
-        createdAt: now,
-      };
-
-      users.set(id, newUser);
-
-      const tokenPayload = { userId: id, email };
-      const accessToken = signAccessToken(tokenPayload);
-      const refreshToken = signRefreshToken(tokenPayload);
-
-      setRefreshCookie(ctx, refreshToken);
-
-      return {
-        accessToken,
-        user: toPublicUser(newUser),
-      };
+    register: async (_: unknown, { input }: { input: unknown }, ctx: Context) => {
+      const result = await authService.register(input);
+      setRefreshCookie(ctx, result.refreshToken);
+      return { accessToken: result.accessToken, user: result.user };
     },
 
-    login: async (
-      _: unknown,
-      { input }: { input: { email: string; password: string } },
-      ctx: Context
-    ) => {
-      const parsed = loginSchema.safeParse(input);
-      if (!parsed.success) {
-        throw validationError(
-          parsed.error.issues.map((i) => i.message).join(" ")
-        );
-      }
-      const { email, password } = parsed.data;
-
-      let found: StoredUser | undefined;
-      for (const u of users.values()) {
-        if (u.email === email) {
-          found = u;
-          break;
-        }
-      }
-
-      if (!found) {
-        throw invalidCredentials();
-      }
-
-      const valid = await bcrypt.compare(password, found.passwordHash);
-      if (!valid) {
-        throw invalidCredentials();
-      }
-
-      const tokenPayload = { userId: found.id, email: found.email };
-      const accessToken = signAccessToken(tokenPayload);
-      const refreshToken = signRefreshToken(tokenPayload);
-
-      setRefreshCookie(ctx, refreshToken);
-
-      return {
-        accessToken,
-        user: toPublicUser(found),
-      };
+    login: async (_: unknown, { input }: { input: unknown }, ctx: Context) => {
+      const result = await authService.login(input);
+      setRefreshCookie(ctx, result.refreshToken);
+      return { accessToken: result.accessToken, user: result.user };
     },
 
     refresh: (_: unknown, __: unknown, ctx: Context) => {
       const token = ctx.req.cookies?.[REFRESH_COOKIE];
-      if (!token) {
-        throw refreshTokenExpired();
-      }
-
-      const payload = verifyRefreshToken(token);
-      if (!payload) {
+      try {
+        const result = authService.refresh(token);
+        setRefreshCookie(ctx, result.refreshToken);
+        return { accessToken: result.accessToken, user: result.user };
+      } catch (err) {
         clearRefreshCookie(ctx);
-        throw refreshTokenExpired();
+        throw err;
       }
-
-      const stored = users.get(payload.userId);
-      if (!stored) {
-        clearRefreshCookie(ctx);
-        throw refreshTokenExpired();
-      }
-
-      // Rotate: issue new pair
-      const tokenPayload = { userId: stored.id, email: stored.email };
-      const accessToken = signAccessToken(tokenPayload);
-      const newRefreshToken = signRefreshToken(tokenPayload);
-
-      setRefreshCookie(ctx, newRefreshToken);
-
-      return {
-        accessToken,
-        user: toPublicUser(stored),
-      };
     },
 
     logout: (_: unknown, __: unknown, ctx: Context) => {

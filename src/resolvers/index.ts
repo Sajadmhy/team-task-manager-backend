@@ -1,5 +1,6 @@
 import { authResolvers } from "./auth";
 import { teamResolvers } from "./team";
+import { taskResolvers } from "./task";
 import { getTeamsForUser } from "../store";
 
 export const resolvers = {
@@ -14,12 +15,8 @@ export const resolvers = {
     // Teams
     ...teamResolvers.Query,
 
-    // Tasks
-    tasks: () => "OK",
-    task: () => "OK",
-
-    // History
-    taskAssignmentHistory: () => "OK",
+    // Tasks + History
+    ...taskResolvers.Query,
   },
 
   Mutation: {
@@ -35,12 +32,7 @@ export const resolvers = {
     ...teamResolvers.Mutation,
 
     // Tasks
-    createTask: () => "OK",
-    updateTask: () => "OK",
-    deleteTask: () => "OK",
-    assignTask: () => "OK",
-    unassignTask: () => "OK",
-    updateTaskStatus: () => "OK",
+    ...taskResolvers.Mutation,
   },
 
   // ── Type resolvers ──────────────────────────────────────
@@ -51,6 +43,14 @@ export const resolvers = {
 
   TeamMember: {
     ...teamResolvers.TeamMember,
+  },
+
+  Task: {
+    ...taskResolvers.Task,
+  },
+
+  TaskAssignmentHistory: {
+    ...taskResolvers.TaskAssignmentHistory,
   },
 
   User: {

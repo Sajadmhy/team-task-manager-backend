@@ -36,6 +36,37 @@ export interface StoredTeamMember {
 
 export const teamMembers: Map<string, StoredTeamMember> = new Map();
 
+// ── Task ──────────────────────────────────────────────────
+
+export type TaskStatus = "UNASSIGNED" | "ASSIGNED" | "IN_PROGRESS" | "DONE";
+
+export interface StoredTask {
+  id: string;
+  teamId: string;
+  assignedUserId: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const tasks: Map<string, StoredTask> = new Map();
+
+// ── Task Assignment History ───────────────────────────────
+
+export interface StoredAssignmentHistory {
+  id: string;
+  taskId: string;
+  fromUserId: string | null;
+  toUserId: string | null;
+  changedByUserId: string;
+  changedAt: string;
+}
+
+export const assignmentHistory: Map<string, StoredAssignmentHistory> =
+  new Map();
+
 // ── ID generator ─────────────────────────────────────────
 
 let _nextId = 1;
@@ -68,6 +99,22 @@ export function getTeamsForUser(userId: string): StoredTeamMember[] {
   const result: StoredTeamMember[] = [];
   for (const m of teamMembers.values()) {
     if (m.userId === userId) result.push(m);
+  }
+  return result;
+}
+
+export function getTasksForTeam(teamId: string): StoredTask[] {
+  const result: StoredTask[] = [];
+  for (const t of tasks.values()) {
+    if (t.teamId === teamId) result.push(t);
+  }
+  return result;
+}
+
+export function getHistoryForTask(taskId: string): StoredAssignmentHistory[] {
+  const result: StoredAssignmentHistory[] = [];
+  for (const h of assignmentHistory.values()) {
+    if (h.taskId === taskId) result.push(h);
   }
   return result;
 }

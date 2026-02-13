@@ -34,10 +34,20 @@ app.post("/graphql", async (req, res) => {
     contextValue: context,
   });
 
-  // Enrich GraphQL errors with AppError code & status
+  // ── Normalize ALL errors into a consistent shape ──────
+  //
+  //  Every error the client receives will always have:
+  //    extensions.code   – one of ErrorCode (string enum)
+  //    extensions.status – matching HTTP-style status number
+  //
+  //  • AppError        → forwarded as-is (NOT_FOUND, UNAUTHORIZED, …)
+  //  • Everything else  → masked as INTERNAL_ERROR (no leak of internals)
+
   if (result.errors) {
     result.errors = result.errors.map((err) => {
       const original = err.originalError;
+
+      // Known, intentional application errors
       if (original instanceof AppError) {
         return new GraphQLError(original.message, {
           nodes: err.nodes,
@@ -50,7 +60,27 @@ app.post("/graphql", async (req, res) => {
           },
         });
       }
-      return err;
+
+      // Unexpected / unknown errors — mask message in production
+      const isProd = process.env.NODE_ENV === "production";
+      const safeMessage = isProd
+        ? "An unexpected error occurred."
+        : err.message || "An unexpected error occurred.";
+
+      if (!isProd && original) {
+        console.error("[Unhandled resolver error]", original);
+      }
+
+      return new GraphQLError(safeMessage, {
+        nodes: err.nodes,
+        source: err.source,
+        positions: err.positions,
+        path: err.path,
+        extensions: {
+          code: "INTERNAL_ERROR",
+          status: 500,
+        },
+      });
     });
   }
 

@@ -1,33 +1,18 @@
 import type { Context } from "../context";
+import * as teamService from "../services/team.service";
 import {
-  teams,
-  teamMembers,
   users,
-  nextId,
-  findMemberByUserAndTeam,
+  teams,
   getMembersForTeam,
-  getTeamsForUser,
+  getTasksForTeam,
   type StoredTeam,
   type StoredTeamMember,
 } from "../store";
-import { requireAuth, requireRole, requireTeamMember } from "../utils/auth";
-import { notFound, validationError, unauthorized } from "../errors";
-import {
-  createTeamSchema,
-  updateTeamSchema,
-  addTeamMemberSchema,
-  updateTeamMemberRoleSchema,
-} from "../validation/team";
 
-// ── Public mappers ───────────────────────────────────────
+// ── Mappers (shape domain objects for GraphQL) ────────────
 
 function toPublicTeam(t: StoredTeam) {
-  return {
-    id: t.id,
-    name: t.name,
-    createdAt: t.createdAt,
-    // Nested fields resolved by type resolvers below
-  };
+  return { id: t.id, name: t.name, createdAt: t.createdAt };
 }
 
 function toPublicMember(m: StoredTeamMember) {
@@ -35,250 +20,73 @@ function toPublicMember(m: StoredTeamMember) {
     id: m.id,
     role: m.role,
     joinedAt: m.joinedAt,
-    // user / team resolved by type resolvers below
     _userId: m.userId,
     _teamId: m.teamId,
   };
 }
 
-// ── Resolvers ────────────────────────────────────────────
+// ── Resolvers (thin — delegate to service) ────────────────
 
 export const teamResolvers = {
-  // ── Queries ──────────────────────────────────────────
-
   Query: {
-    /** List all teams the authenticated user belongs to */
-    teams: (_: unknown, __: unknown, ctx: Context) => {
-      const user = requireAuth(ctx);
-      const memberships = getTeamsForUser(user.userId);
-      return memberships
-        .map((m) => teams.get(m.teamId))
-        .filter(Boolean)
-        .map((t) => toPublicTeam(t!));
-    },
+    teams: (_: unknown, __: unknown, ctx: Context) =>
+      teamService.getUserTeams(ctx).map(toPublicTeam),
 
-    /** Get a single team (must be a member) */
-    team: (_: unknown, { id }: { id: string }, ctx: Context) => {
-      requireTeamMember(ctx, id);
-      const t = teams.get(id);
-      if (!t) throw notFound("Team");
-      return toPublicTeam(t);
-    },
+    team: (_: unknown, { id }: { id: string }, ctx: Context) =>
+      toPublicTeam(teamService.getTeam(ctx, id)),
 
-    /** List members of a team (must be a member) */
-    teamMembers: (
-      _: unknown,
-      { teamId }: { teamId: string },
-      ctx: Context
-    ) => {
-      requireTeamMember(ctx, teamId);
-      return getMembersForTeam(teamId).map(toPublicMember);
-    },
+    teamMembers: (_: unknown, { teamId }: { teamId: string }, ctx: Context) =>
+      teamService.getMembers(ctx, teamId).map(toPublicMember),
   },
 
-  // ── Mutations ────────────────────────────────────────
-
   Mutation: {
-    /** Create a new team — creator automatically becomes ADMIN */
-    createTeam: (
-      _: unknown,
-      { input }: { input: { name: string } },
-      ctx: Context
-    ) => {
-      const user = requireAuth(ctx);
+    createTeam: (_: unknown, { input }: { input: unknown }, ctx: Context) =>
+      toPublicTeam(teamService.createTeam(ctx, input)),
 
-      const parsed = createTeamSchema.safeParse(input);
-      if (!parsed.success) {
-        throw validationError(
-          parsed.error.issues.map((i) => i.message).join(" ")
-        );
-      }
+    updateTeam: (_: unknown, { id, input }: { id: string; input: unknown }, ctx: Context) =>
+      toPublicTeam(teamService.updateTeam(ctx, id, input)),
 
-      const now = new Date().toISOString();
-
-      const teamId = nextId();
-      const team: StoredTeam = {
-        id: teamId,
-        name: parsed.data.name,
-        createdAt: now,
-      };
-      teams.set(teamId, team);
-
-      // Add creator as ADMIN (no transaction needed — in-memory is synchronous)
-      const memberId = nextId();
-      const membership: StoredTeamMember = {
-        id: memberId,
-        userId: user.userId,
-        teamId,
-        role: "ADMIN",
-        joinedAt: now,
-      };
-      teamMembers.set(memberId, membership);
-
-      return toPublicTeam(team);
-    },
-
-    updateTeam: (
-      _: unknown,
-      { id, input }: { id: string; input: { name?: string } },
-      ctx: Context
-    ) => {
-      requireRole(ctx, id, "ADMIN");
-
-      const team = teams.get(id);
-      if (!team) throw notFound("Team");
-
-      const parsed = updateTeamSchema.safeParse(input);
-      if (!parsed.success) {
-        throw validationError(
-          parsed.error.issues.map((i) => i.message).join(" ")
-        );
-      }
-
-      if (parsed.data.name !== undefined) {
-        team.name = parsed.data.name;
-      }
-
-      return toPublicTeam(team);
-    },
-
-    /** Delete a team — ADMIN only. Removes team + all memberships. */
     deleteTeam: (_: unknown, { id }: { id: string }, ctx: Context) => {
-      requireRole(ctx, id, "ADMIN");
-
-      const team = teams.get(id);
-      if (!team) throw notFound("Team");
-
-      for (const [memberId, m] of teamMembers) {
-        if (m.teamId === id) teamMembers.delete(memberId);
-      }
-
-      teams.delete(id);
-
+      teamService.deleteTeam(ctx, id);
       return { success: true, message: "Team deleted successfully." };
     },
 
-    addTeamMember: (
-      _: unknown,
-      {
-        input,
-      }: { input: { userId: string; teamId: string; role?: string } },
-      ctx: Context
-    ) => {
-      const parsed = addTeamMemberSchema.safeParse(input);
-      if (!parsed.success) {
-        throw validationError(
-          parsed.error.issues.map((i) => i.message).join(" ")
-        );
-      }
-      const { userId, teamId, role } = parsed.data;
+    addTeamMember: (_: unknown, { input }: { input: unknown }, ctx: Context) =>
+      toPublicMember(teamService.addMember(ctx, input)),
 
-      requireRole(ctx, teamId, "ADMIN");
+    updateTeamMemberRole: (_: unknown, { input }: { input: unknown }, ctx: Context) =>
+      toPublicMember(teamService.updateMemberRole(ctx, input)),
 
-      if (!teams.has(teamId)) throw notFound("Team");
-
-      if (!users.has(userId)) throw notFound("User");
-
-      if (findMemberByUserAndTeam(userId, teamId)) {
-        throw validationError("User is already a member of this team.");
-      }
-
-      const memberId = nextId();
-      const now = new Date().toISOString();
-      const membership: StoredTeamMember = {
-        id: memberId,
-        userId,
-        teamId,
-        role,
-        joinedAt: now,
-      };
-      teamMembers.set(memberId, membership);
-
-      return toPublicMember(membership);
-    },
-
-    updateTeamMemberRole: (
-      _: unknown,
-      { input }: { input: { memberId: string; role: string } },
-      ctx: Context
-    ) => {
-      const parsed = updateTeamMemberRoleSchema.safeParse(input);
-      if (!parsed.success) {
-        throw validationError(
-          parsed.error.issues.map((i) => i.message).join(" ")
-        );
-      }
-      const { memberId, role } = parsed.data;
-
-      const member = teamMembers.get(memberId);
-      if (!member) throw notFound("Team member");
-
-      const actor = requireRole(ctx, member.teamId, "ADMIN");
-
-      if (actor.id === memberId && role !== "ADMIN") {
-        const admins = getMembersForTeam(member.teamId).filter(
-          (m) => m.role === "ADMIN"
-        );
-        if (admins.length <= 1) {
-          throw unauthorized(
-            "Cannot demote yourself — you are the only admin."
-          );
-        }
-      }
-
-      member.role = role;
-      return toPublicMember(member);
-    },
-
-    removeTeamMember: (
-      _: unknown,
-      { memberId }: { memberId: string },
-      ctx: Context
-    ) => {
-      const member = teamMembers.get(memberId);
-      if (!member) throw notFound("Team member");
-
-      const actor = requireRole(ctx, member.teamId, "ADMIN");
-
-      if (actor.id === memberId) {
-        const admins = getMembersForTeam(member.teamId).filter(
-          (m) => m.role === "ADMIN"
-        );
-        if (admins.length <= 1) {
-          throw unauthorized(
-            "Cannot remove yourself — you are the only admin."
-          );
-        }
-      }
-
-      teamMembers.delete(memberId);
-
+    removeTeamMember: (_: unknown, { memberId }: { memberId: string }, ctx: Context) => {
+      teamService.removeMember(ctx, memberId);
       return { success: true, message: "Member removed successfully." };
     },
   },
 
-  // ── Type resolvers (nested fields) ──────────────────
+  // ── Type resolvers (nested field resolution) ────────────
 
   Team: {
-    members: (team: { id: string }) => {
-      return getMembersForTeam(team.id).map(toPublicMember);
-    },
-    tasks: () => {
-      // Placeholder — will be wired when task resolvers are implemented
-      return [];
-    },
+    members: (team: { id: string }) =>
+      getMembersForTeam(team.id).map(toPublicMember),
+
+    tasks: (team: { id: string }) =>
+      getTasksForTeam(team.id).map((t) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        status: t.status,
+        createdAt: t.createdAt,
+        updatedAt: t.updatedAt,
+        _teamId: t.teamId,
+        _assignedUserId: t.assignedUserId,
+      })),
   },
 
   TeamMember: {
     user: (member: { _userId: string }) => {
       const u = users.get(member._userId);
       if (!u) return null;
-      return {
-        id: u.id,
-        email: u.email,
-        name: u.name,
-        createdAt: u.createdAt,
-      };
+      return { id: u.id, email: u.email, name: u.name, createdAt: u.createdAt };
     },
     team: (member: { _teamId: string }) => {
       const t = teams.get(member._teamId);
