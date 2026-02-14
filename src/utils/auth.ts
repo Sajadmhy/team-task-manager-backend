@@ -1,7 +1,7 @@
 import type { Context } from "../context";
 import { unauthenticated, unauthorized } from "../errors";
 import { findMemberByUserAndTeam, type TeamRole } from "../store";
-import type { TokenPayload } from "./jwt";
+import type { TokenPayload } from "./jwt"; // direct sibling import (avoid circular barrel)
 
 export function requireAuth(ctx: Context): TokenPayload {
   if (!ctx.user) throw unauthenticated();

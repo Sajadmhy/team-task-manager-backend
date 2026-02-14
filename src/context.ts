@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { verifyAccessToken, type TokenPayload } from "./utils/jwt";
+import { verifyAccessToken, type TokenPayload, logger } from "./utils";
 
 export interface Context {
   /** The authenticated user, or null if unauthenticated */
@@ -22,6 +22,9 @@ export function buildContext(req: Request, res: Response): Context {
   if (header && header.startsWith("Bearer ")) {
     const token = header.slice(7);
     user = verifyAccessToken(token);
+    if (!user) {
+      logger.auth.warn("Invalid or expired access token presented");
+    }
   }
 
   return { user, req, res };

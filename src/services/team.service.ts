@@ -1,13 +1,12 @@
 import type { Context } from "../context";
-import { validate } from "../utils/validate";
-import { requireAuth, requireRole, requireTeamMember } from "../utils/auth";
+import { validate, requireAuth, requireRole, requireTeamMember, logger } from "../utils";
 import { notFound, unauthorized, validationError } from "../errors";
 import {
   createTeamSchema,
   updateTeamSchema,
   addTeamMemberSchema,
   updateTeamMemberRoleSchema,
-} from "../validation/team";
+} from "../validation";
 import {
   teams,
   teamMembers,
@@ -70,6 +69,8 @@ export function createTeam(ctx: Context, input: unknown): StoredTeam {
   };
   teamMembers.set(memberId, membership);
 
+  logger.team.info(`Team created: id=${teamId} name="${name}" by user=${user.userId}`);
+
   return team;
 }
 
@@ -113,6 +114,8 @@ export function deleteTeam(ctx: Context, id: string): void {
   }
 
   teams.delete(id);
+
+  logger.team.info(`Team deleted: id=${id}`);
 }
 
 export function addMember(
@@ -139,6 +142,8 @@ export function addMember(
     joinedAt: new Date().toISOString(),
   };
   teamMembers.set(memberId, membership);
+
+  logger.team.info(`Member added: user=${userId} → team=${teamId} role=${role}`);
 
   return membership;
 }
@@ -186,4 +191,6 @@ export function removeMember(ctx: Context, memberId: string): void {
   }
 
   teamMembers.delete(memberId);
+
+  logger.team.info(`Member removed: member=${memberId} from team=${member.teamId}`);
 }

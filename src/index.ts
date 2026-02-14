@@ -6,10 +6,11 @@ import { graphql, GraphQLError } from "graphql";
 import { makeExecutableSchema } from "@graphql-tools/schema";
 import expressPlayground from "graphql-playground-middleware-express";
 
-import { typeDefs } from "./schema/schema";
-import { resolvers } from "./resolvers/index";
+import { typeDefs } from "./schema";
+import { resolvers } from "./resolvers";
 import { buildContext } from "./context";
 import { AppError } from "./errors";
+import { logger } from "./utils";
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -47,8 +48,13 @@ app.post("/graphql", async (req, res) => {
     result.errors = result.errors.map((err) => {
       const original = err.originalError;
 
-      // Known, intentional application errors
+      // Known, intentional application errors — log at warn level
       if (original instanceof AppError) {
+        logger.graphql.warn(
+          `AppError [${original.code}] path=${err.path?.join(".")}`,
+          { message: original.message, status: original.status },
+        );
+
         return new GraphQLError(original.message, {
           nodes: err.nodes,
           source: err.source,
@@ -61,15 +67,16 @@ app.post("/graphql", async (req, res) => {
         });
       }
 
-      // Unexpected / unknown errors — mask message in production
+      // Unexpected / unknown errors — always log, mask in production
       const isProd = process.env.NODE_ENV === "production";
       const safeMessage = isProd
         ? "An unexpected error occurred."
         : err.message || "An unexpected error occurred.";
 
-      if (!isProd && original) {
-        console.error("[Unhandled resolver error]", original);
-      }
+      logger.graphql.error(
+        `Unhandled resolver error at path=${err.path?.join(".")}`,
+        original ?? err,
+      );
 
       return new GraphQLError(safeMessage, {
         nodes: err.nodes,
@@ -91,6 +98,6 @@ app.post("/graphql", async (req, res) => {
 app.get("/playground", expressPlayground({ endpoint: "/graphql" }));
 
 app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}/graphql`);
-  console.log(`Playground at http://localhost:${PORT}/playground`);
+  logger.server.info(`Server running at http://localhost:${PORT}/graphql`);
+  logger.server.info(`Playground at http://localhost:${PORT}/playground`);
 });

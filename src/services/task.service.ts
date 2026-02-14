@@ -1,13 +1,12 @@
 import type { Context } from "../context";
-import { validate } from "../utils/validate";
-import { requireAuth, requireRole, requireTeamMember } from "../utils/auth";
+import { validate, requireAuth, requireRole, requireTeamMember, logger } from "../utils";
 import { notFound, unauthorized, validationError } from "../errors";
 import {
   createTaskSchema,
   updateTaskSchema,
   assignTaskSchema,
   updateTaskStatusSchema,
-} from "../validation/task";
+} from "../validation";
 import {
   tasks,
   teams,
@@ -81,6 +80,8 @@ export function createTask(ctx: Context, input: unknown): StoredTask {
   };
   tasks.set(id, task);
 
+  logger.task.info(`Task created: id=${id} team=${teamId} title="${title}"`);
+
   return task;
 }
 
@@ -112,6 +113,8 @@ export function deleteTask(ctx: Context, id: string): void {
     if (h.taskId === id) assignmentHistory.delete(hId);
   }
   tasks.delete(id);
+
+  logger.task.info(`Task deleted: id=${id} team=${task.teamId}`);
 }
 
 export function assignTask(ctx: Context, input: unknown): StoredTask {
@@ -145,6 +148,8 @@ export function assignTask(ctx: Context, input: unknown): StoredTask {
   task.assignedUserId = userId;
   task.status = "ASSIGNED";
   task.updatedAt = now;
+
+  logger.task.info(`Task assigned: task=${taskId} → user=${userId}`);
 
   return task;
 }

@@ -1,5 +1,5 @@
 import type { Context } from "../context";
-import * as teamService from "../services/team.service";
+import { teamService } from "../services";
 import {
   users,
   teams,

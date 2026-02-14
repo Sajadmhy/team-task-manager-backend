@@ -1,5 +1,5 @@
 import type { Context } from "../context";
-import * as authService from "../services/auth.service";
+import { authService } from "../services";
 
 // ── Cookie config (transport concern — stays in the resolver) ──
 
